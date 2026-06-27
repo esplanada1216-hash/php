@@ -38,34 +38,26 @@ function getSpotifyToken() {
 
 function getMp3StreamTitle($streamingUrl, $interval) {
     $needle = 'StreamTitle=';
-    $headers = [
-        'Icy-MetaData: 1',
-        'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.110 Safari/537.36'
-    ];
-
-    $context = stream_context_create([
-    'http' => [
-        'header' => implode("\r\n", $headers),
-        'timeout' => 60 // Incrementar timeout a 60 segundos
-    ]
-]);
-
+    $headers = ['Icy-MetaData: 1', 'User-Agent: Mozilla/5.0'];
+    
+    // Timeout curto e leitura direta do bloco de metadados
+    $context = stream_context_create(['http' => ['header' => implode("\r\n", $headers), 'timeout' => 3]]);
     $stream = @fopen($streamingUrl, 'r', false, $context);
-    if ($stream === false) {
-        return null;
+    
+    if (!$stream) return null;
+    
+    // Lê apenas os dados necessários e fecha a conexão imediatamente
+    $buffer = fread($stream, $interval);
+    fclose($stream); 
+    
+    $titleIndex = strpos($buffer, $needle);
+    if ($titleIndex !== false) {
+        $title = substr($buffer, $titleIndex + strlen($needle));
+        return trim(substr($title, 0, strpos($title, ';')), "' ");
     }
+    return null;
+}
 
-    $metaDataInterval = null;
-    foreach ($http_response_header as $header) {
-        if (stripos($header, 'icy-metaint') !== false) {
-            $metaDataInterval = (int)trim(explode(':', $header)[1]);
-            break;
-        }
-    }
-
-    if ($metaDataInterval === null) {
-        fclose($stream);
-        return null;
     }
 
     while (!feof($stream)) {
@@ -98,8 +90,8 @@ function getAlbumInfo($artist, $song) {
     
     // 2. Monta a busca otimizada para o iTunes
     $termo_busca = urlencode($clean_artist . ' ' . $clean_song);
-    $url = "https://apple.com{$termo_busca}&limit=1&media=music";
-    
+   $url = "https://apple.com{$termo_busca}&limit=1&media=music";
+   
     $headers = [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     ];
@@ -137,7 +129,7 @@ function getAlbumInfo($artist, $song) {
     }
     
     // Imagem padrão caso o iTunes não encontre o cantor
-    $imagem_padrao = "https://radiotemasdenovelas.com";
+   $imagem_padrao = "https://radiotemasdenovelas.com";
     return [$imagem_padrao, 'No disponible', 'No disponible', 'No disponible', 0];
 }
 
