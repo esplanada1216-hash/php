@@ -91,53 +91,54 @@ function extractArtistAndSong($title) {
     }
     return ['', trim($title)];
 }
-
 function getAlbumInfo($artist, $song) {
-    $token = getSpotifyToken();
-    if (!$token) {
-        return [null, 'No disponible', 'No disponible', 'No disponible', 0];
-    }
-
-    $url = 'https://api.spotify.com/v1/search?q=' . urlencode("track:$song artist:$artist") . '&type=track&limit=1';
+    // 1. Limpa termos extras comuns em rádios (parênteses, colchetes, "tema de")
+    $clean_artist = trim(preg_replace('/[\(\[][^\)\]]*[\)\]]/', '', $artist));
+    $clean_song = trim(preg_replace('/[\(\[][^\)\]]*[\)\]]/', '', $song));
+    
+    // 2. Monta a busca otimizada para o iTunes
+    $termo_busca = urlencode($clean_artist . ' ' . $clean_song);
+    $url = "https://apple.com{$termo_busca}&limit=1&media=music";
+    
     $headers = [
-        'Authorization: Bearer ' . $token
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     ];
-
+    
     $options = [
         'http' => [
             'header' => implode("\r\n", $headers),
-            'method' => 'GET'
+            'method' => 'GET',
+            'timeout' => 5
         ]
     ];
-
+    
     $context = stream_context_create($options);
     $response = @file_get_contents($url, false, $context);
-    if ($response === false) {
-        return [null, 'No disponible', 'No disponible', 'No disponible', 0];
+    
+    if ($response !== false) {
+        $data = json_decode($response, true);
+        
+        // CORREÇÃO: Verifica se a lista existe e se possui pelo menos 1 resultado [0]
+        if (isset($data['results'][0])) {
+            $track = $data['results'][0];
+            $album = $track['collectionName'] ?? 'No disponible';
+            $year = isset($track['releaseDate']) ? substr($track['releaseDate'], 0, 4) : 'No disponible';
+            $genre = $track['primaryGenreName'] ?? 'No disponible';
+            $durationMs = $track['trackTimeMillis'] ?? 0;
+            
+            // Pega a imagem padrão do iTunes e altera para o tamanho máximo em alta resolução
+            $artworkUrl = $track['artworkUrl100'] ?? null;
+            if ($artworkUrl) {
+                $artworkUrl = str_replace('100x100bb', '600x600bb', $artworkUrl);
+            }
+            
+            return [$artworkUrl, $album, $year, $genre, $durationMs];
+        }
     }
-
-    $data = json_decode($response, true);
-    if (isset($data['tracks']['items'][0])) {
-        $track = $data['tracks']['items'][0];
-        $album = $track['album']['name'] ?? 'No disponible';
-        $artworkUrl = $track['album']['images'][0]['url'] ?? null;
-        $year = isset($track['album']['release_date']) ? substr($track['album']['release_date'], 0, 4) : 'No disponible';
-
-        // Duración en milisegundos
-        $durationMs = $track['duration_ms'] ?? 0;
-
-        // Obtener el género del artista
-        $artistId = $track['artists'][0]['id'];
-        $artistUrl = "https://api.spotify.com/v1/artists/$artistId";
-        $artistResponse = @file_get_contents($artistUrl, false, $context);
-        $artistData = json_decode($artistResponse, true);
-        $genres = $artistData['genres'] ?? [];
-        $genre = !empty($genres) ? implode(', ', $genres) : 'No disponible';
-
-        return [$artworkUrl, $album, $year, $genre, $durationMs];
-    }
-
-    return [null, 'No disponible', 'No disponible', 'No disponible', 0];
+    
+    // Imagem padrão caso o iTunes não encontre o cantor
+    $imagem_padrao = "https://radiotemasdenovelas.com";
+    return [$imagem_padrao, 'No disponible', 'No disponible', 'No disponible', 0];
 }
 
 function updateHistory($url, $artist, $song) {
